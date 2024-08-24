@@ -48,7 +48,7 @@
   }
 }
 
-.moon-night {
+.moon {
     border-radius: 50%;
     background-color: darkgray;
     height: 150px;
@@ -57,8 +57,4 @@
     animation-name: moon-go-up;
     animation-duration: 2s;
     bottom: 0;
-}
-
-.moon-day {
-  top: 0;
 }
