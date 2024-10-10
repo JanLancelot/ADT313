@@ -1,0 +1,22 @@
+.password-strength {
+    padding: 5px;
+    border-radius: 5px;
+    margin-top: 5px;
+    font-weight: bold;
+  }
+  
+  .password-strength.weak {
+    color: #ff0000;
+    background-color: #ffe6e6; 
+  }
+  
+  .password-strength.moderate {
+    color: #ffa500;
+    background-color: #fff4e6;
+  }
+  
+  .password-strength.strong {
+    color: #008000;
+    background-color: #e6ffe6;
+  }
+  
