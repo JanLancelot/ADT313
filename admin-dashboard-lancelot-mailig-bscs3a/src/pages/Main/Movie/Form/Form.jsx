@@ -18,13 +18,20 @@ const Form = () => {
     voteAverage: "",
   });
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   let { movieId } = useParams();
   const navigate = useNavigate();
 
   const handleSearch = useCallback(() => {
     setError("");
-    if (!query) return;
+    if (!query) {
+      setError("Please enter a search term");
+      return;
+    }
+
+    setIsLoading(true);
+    setSearchedMovieList([]);
 
     axios({
       method: "get",
@@ -36,17 +43,23 @@ const Form = () => {
       },
     })
       .then((response) => {
-        setSearchedMovieList(response.data.results);
-        setTotalPages(response.data.total_pages);
+        if (response.data.results.length === 0) {
+          setError("No movies found matching your search");
+        } else {
+          setSearchedMovieList(response.data.results);
+          setTotalPages(response.data.total_pages);
+        }
       })
-      .catch((error) => {
-        setError("Error searching for movies. Please try again.");
-        console.error(error);
+      .catch(() => {
+        setError("Unable to search movies at this time. Please try again later.");
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
   }, [query, currentPage]);
 
   useEffect(() => {
-    if (query) {
+    if (currentPage > 1) {
       handleSearch();
     }
   }, [currentPage, handleSearch]);
@@ -60,6 +73,7 @@ const Form = () => {
       releaseDate: movie.release_date,
       voteAverage: movie.vote_average,
     });
+    setError("");
   };
 
   const handleInputChange = (e) => {
@@ -68,13 +82,42 @@ const Form = () => {
       ...prevData,
       [name]: value,
     }));
+    setError("");
   };
 
-  const handleSave = () => {
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      setCurrentPage(1);
+      handleSearch();
+    }
+  };
+
+  const validateForm = () => {
+    const errors = [];
+    if (!formData.title) errors.push("Title is required");
+    if (!formData.overview) errors.push("Overview is required");
+    if (!formData.releaseDate) errors.push("Release date is required");
+    if (!formData.popularity) errors.push("Popularity is required");
+    if (!formData.voteAverage) errors.push("Vote average is required");
+    if (!selectedMovie) errors.push("Please select a movie from search results");
+    return errors;
+  };
+
+  const handleSave = async () => {
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(", "));
+      return;
+    }
+
+    setIsLoading(true);
     setError("");
+
     const accessToken = localStorage.getItem("accessToken");
-    if (!selectedMovie) {
-      setError("Please search and select a movie.");
+    if (!accessToken) {
+      setError("You must be logged in to perform this action");
+      setIsLoading(false);
       return;
     }
 
@@ -90,29 +133,32 @@ const Form = () => {
       isFeatured: 0,
     };
 
-    const request = axios({
-      method: movieId ? "put" : "post",
-      url: movieId ? `/movies/${movieId}` : "/movies",
-      data: data,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-      .then(() => {
-        navigate("/main/movies");
-      })
-      .catch((error) => {
-        setError("Error saving the movie. Please try again.");
-        console.error(error);
+    try {
+      await axios({
+        method: movieId ? "put" : "post",
+        url: movieId ? `/movies/${movieId}` : "/movies",
+        data: data,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
+      navigate("/main/movies");
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 
+        "Unable to save the movie. Please try again later.";
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleUpdate = () => {
-    handleSave();
-  };
+  const handleUpdate = handleSave;
 
   useEffect(() => {
     if (movieId) {
+      setIsLoading(true);
+      setError("");
+
       axios
         .get(`/movies/${movieId}`)
         .then((response) => {
@@ -122,7 +168,7 @@ const Form = () => {
             original_title: response.data.title,
             overview: response.data.overview,
             popularity: response.data.popularity,
-            poster_path: response.data.posterPath,
+            poster_path: response.data.posterPath.replace("https://image.tmdb.org/t/p/original/", ""),
             release_date: response.data.releaseDate,
             vote_average: response.data.voteAverage,
           };
@@ -135,18 +181,20 @@ const Form = () => {
             voteAverage: response.data.voteAverage,
           });
         })
-        .catch((error) => {
-          setError("Error fetching movie details. Please try again.");
-          console.error(error);
+        .catch(() => {
+          setError("Unable to load movie details. Please try again later.");
+        })
+        .finally(() => {
+          setIsLoading(false);
         });
     }
   }, [movieId]);
 
   return (
     <>
-      <p>This took longer than it should have... - Lance</p>
       <h1>{movieId !== undefined ? "Edit" : "Create"} Movie</h1>
       {error && <div className="error-message">{error}</div>}
+      {isLoading && <div className="loading-message">Loading...</div>}
 
       {movieId === undefined && (
         <>
@@ -157,8 +205,11 @@ const Form = () => {
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setCurrentPage(1);
+                setError("");
               }}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter movie title..."
+              disabled={isLoading}
             />
             <button
               type="button"
@@ -166,12 +217,17 @@ const Form = () => {
                 setCurrentPage(1);
                 handleSearch();
               }}
+              disabled={isLoading || !query.trim()}
             >
-              Search
+              {isLoading ? "Searching..." : "Search"}
             </button>
             <div className="searched-movie">
               {searchedMovieList.map((movie) => (
-                <p key={movie.id} onClick={() => handleSelectMovie(movie)}>
+                <p 
+                  key={movie.id} 
+                  onClick={() => handleSelectMovie(movie)}
+                  className={selectedMovie?.id === movie.id ? "selected" : ""}
+                >
                   {movie.original_title}
                 </p>
               ))}
@@ -179,10 +235,8 @@ const Form = () => {
             {totalPages > 1 && (
               <div className="pagination">
                 <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(1, prev - 1))
-                  }
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1 || isLoading}
                 >
                   Previous
                 </button>
@@ -190,10 +244,8 @@ const Form = () => {
                   Page {currentPage} of {totalPages}
                 </span>
                 <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-                  }
-                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || isLoading}
                 >
                   Next
                 </button>
@@ -205,7 +257,7 @@ const Form = () => {
       )}
 
       <div className="container">
-        <form>
+        <form onSubmit={(e) => e.preventDefault()}>
           {selectedMovie && (
             <img
               className="poster-image"
@@ -220,6 +272,8 @@ const Form = () => {
               name="title"
               value={formData.title}
               onChange={handleInputChange}
+              disabled={isLoading}
+              required
             />
           </div>
           <div className="field">
@@ -229,6 +283,8 @@ const Form = () => {
               name="overview"
               value={formData.overview}
               onChange={handleInputChange}
+              disabled={isLoading}
+              required
             />
           </div>
           <div className="field">
@@ -238,6 +294,8 @@ const Form = () => {
               name="popularity"
               value={formData.popularity}
               onChange={handleInputChange}
+              disabled={isLoading}
+              step="0.1"
             />
           </div>
           <div className="field">
@@ -247,6 +305,8 @@ const Form = () => {
               name="releaseDate"
               value={formData.releaseDate}
               onChange={handleInputChange}
+              disabled={isLoading}
+              required
             />
           </div>
           <div className="field">
@@ -256,11 +316,19 @@ const Form = () => {
               name="voteAverage"
               value={formData.voteAverage}
               onChange={handleInputChange}
+              disabled={isLoading}
+              step="0.1"
+              min="0"
+              max="10"
             />
           </div>
 
-          <button type="button" onClick={movieId ? handleUpdate : handleSave}>
-            {movieId ? "Update" : "Save"}
+          <button 
+            type="button" 
+            onClick={movieId ? handleUpdate : handleSave}
+            disabled={isLoading}
+          >
+            {isLoading ? "Saving..." : (movieId ? "Update" : "Save")}
           </button>
         </form>
       </div>
